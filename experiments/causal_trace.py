@@ -473,7 +473,7 @@ class ModelAndTokenizer:
         self.layer_names = [
             n
             for n, m in model.named_modules()
-            if (re.match(r"^(transformer|gpt_neox)\.(h|layers)\.\d+$", n))
+            if (re.match(r"^(transformer|gpt_neox|model)\.(h|layers)\.\d+$", n))
         ]
         self.num_layers = len(self.layer_names)
 
@@ -490,6 +490,12 @@ def layername(model, num, kind=None):
         if kind == "embed":
             return "transformer.wte"
         return f'transformer.h.{num}{"" if kind is None else "." + kind}'
+    if hasattr(model, "model"): #llama2-7b
+        if kind == "embed":
+            return "model.embed_tokens"
+        if kind == "attn":
+            kind = "self_attn"
+        return f'model.layers.{num}{"" if kind is None else "." + kind}'
     if hasattr(model, "gpt_neox"):
         if kind == "embed":
             return "gpt_neox.embed_in"
@@ -638,8 +644,37 @@ def predict_token(mt, prompts, return_p=False):
     if return_p:
         result = (result, p)
     return result
+def generate_sentence(mt, prompts, max_length=50, temperature=0.7, num_beams=5):
+    """
+    Generates sentences from the model based on the given list of prompts.
 
+    :param mt: A ModelAndTokenizer instance containing the model and tokenizer.
+    :param prompts: A list of input prompts as strings.
+    :param max_length: The maximum length of the generated sequence for each prompt.
+    :param temperature: The value used to model the likelihood of the next token (lower is more deterministic).
+    :param num_beams: The number of beams for beam search (higher can give more focused results).
+    :return: A list of generated sentences corresponding to each prompt.
+    """
+    generated_sentences = []
 
+    for prompt in prompts:
+        # Encode the input prompt to get the input IDs
+        input_ids = mt.tokenizer.encode(prompt, return_tensors='pt').to(mt.model.device)
+
+        # Generate a sequence of tokens after the input prompt
+        output_ids = mt.model.generate(
+            input_ids, 
+            max_length=max_length, 
+            temperature=temperature, 
+            num_beams=num_beams,
+            early_stopping=True
+        )
+
+        # Decode the generated tokens to a string
+        generated_sentence = mt.tokenizer.decode(output_ids[0], skip_special_tokens=True)
+        generated_sentences.append(generated_sentence)
+
+    return generated_sentences
 def predict_from_input(model, inp):
     out = model(**inp)["logits"]
     probs = torch.softmax(out[:, -1], dim=1)

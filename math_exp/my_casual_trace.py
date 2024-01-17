@@ -1,38 +1,10 @@
-# %% [markdown]
-# <a href="https://colab.research.google.com/github/kmeng01/rome/blob/main/notebooks/causal_trace.ipynb"><img src="https://colab.research.google.com/assets/colab-badge.svg" align="left"/></a>&nbsp;or in a local notebook.
 
-
-# %%
 IS_COLAB = False
 
-# %% [markdown]
-# ## Causal Tracing
-# 
-# A demonstration of the double-intervention causal tracing method.
-# 
-# The strategy used by causal tracing is to understand important
-# states within a transfomer by doing two interventions simultaneously:
-# 
-# 1. Corrupt a subset of the input.  In our paper, we corrupt the subject tokens
-#    to frustrate the ability of the transformer to accurately complete factual
-#    prompts about the subject.
-# 2. Restore a subset of the internal hidden states.  In our paper, we scan
-#    hidden states at all layers and all tokens, searching for individual states
-#    that carry the necessary information for the transformer to recover its
-#    capability to complete the factual prompt.
-# 
-# The traces of decisive states can be shown on a heatmap.  This notebook
-# demonstrates the code for conducting causal traces and creating these heatmaps.
+import sys
+sys.path.append('..')
 
 
-# %% [markdown]
-# The `experiments.causal_trace` module contains a set of functions for running causal traces.
-# 
-# In this notebook, we reproduce, demonstrate and discuss the interesting functions.
-# 
-# We begin by importing several utility functions that deal with tokens and transformer models.
-
-# %%
 import os, re, json
 import torch, numpy
 from collections import defaultdict
@@ -47,6 +19,7 @@ from experiments.causal_trace import (
 
 from experiments.causal_trace import (
     make_inputs,
+    generate_sentence,
     decode_tokens,
     find_token_range,
     predict_token,
@@ -57,73 +30,11 @@ from dsets import KnownsDataset
 
 torch.set_grad_enabled(False)
 
-# %%
 import warnings
 warnings.filterwarnings("ignore")
 
-# %% [markdown]
-# Now we load a model and tokenizer, and show that it can complete a couple factual statements correctly.
 
-# %%
-model_name ="roberta-base" #gpt2-xl"# 'EleutherAI_gpt-j-6B' #  # or "EleutherAI/gpt-j-6B" or "EleutherAI/gpt-neox-20b"
-mt = ModelAndTokenizer(
-    model_name,
-    low_cpu_mem_usage=IS_COLAB,
-    torch_dtype=(torch.float16 if "20b" in model_name else None),
-)
 
-# %%
-print(predict_token(
-    mt,
-    ["2+2=", "one plus one equals to"],
-    return_p=True,
-))
-
-# %% [markdown]
-# To obfuscate the subject during Causal Tracing, we use noise sampled from a zero-centered spherical Gaussian, whose stddev is 3 times the $\sigma$ stddev the model's embeddings. Let's compute that value.
-
-# %%
-knowns = KnownsDataset(DATA_DIR)  # Dataset of known facts
-noise_level = 3 * collect_embedding_std(mt, [k["subject"] for k in knowns])
-print(f"Using noise level {noise_level}")
-
-# %% [markdown]
-# ## Tracing a single location
-# 
-# The core intervention in causal tracing is captured in this function:
-# 
-# `trace_with_patch` a single causal trace.
-# 
-# It enables running a batch of inferences with two interventions.
-# 
-#   1. Random noise can be added to corrupt the inputs of some of the batch.
-#   2. At any point, clean non-noised state can be copied over from an
-#      uncorrupted batch member to other batch members.
-#   
-# The convention used by this function is that the zeroth element of the
-# batch is the uncorrupted run, and the subsequent elements of the batch
-# are the corrupted runs.  The argument tokens_to_mix specifies an
-# be corrupted by adding Gaussian noise to the embedding for the batch
-# inputs other than the first element in the batch.  Alternately,
-# subsequent runs could be corrupted by simply providing different
-# input tokens via the passed input batch.
-# 
-# To ensure that corrupted behavior is representative, in practice, we
-# will actually run several (ten) corrupted runs in the same batch,
-# each with its own sample of noise.
-# 
-# Then when running, a specified set of hidden states will be uncorrupted
-# by restoring their values to the same vector that they had in the
-# zeroth uncorrupted run.  This set of hidden states is listed in
-# states_to_patch, by listing [(token_index, layername), ...] pairs.
-# To trace the effect of just a single state, this can be just a single
-# token/layer pair.  To trace the effect of restoring a set of states,
-# any number of token indices and layers can be listed.
-# 
-# Note that this function is also in experiments.causal_trace; the code
-# is shown here to show the logic.
-
-# %%
 def trace_with_patch(
     model,  # The model
     inp,  # A set of inputs
@@ -182,14 +93,6 @@ def trace_with_patch(
 
     return probs
 
-# %% [markdown]
-# ## Scanning all locations
-# 
-# A causal flow heatmap is created by repeating `trace_with_patch` at every individual hidden state, and measuring the impact of restoring state at each location.
-# 
-# The `calculate_hidden_flow` function does this loop.  It handles both the case of restoring a single hidden state, and also restoring MLP or attention states.  Because MLP and attention make small residual contributions, to observe a causal effect in those cases, we need to restore several layers of contributions at once, which is done by `trace_important_window`.
-
-# %%
 def calculate_hidden_flow(
     mt, prompt, subject, samples=10, noise=0.1, window=10, kind=None
 ):
@@ -274,13 +177,6 @@ def trace_important_window(
         table.append(torch.stack(row))
     return torch.stack(table)
 
-# %% [markdown]
-# ## Plotting the results
-# 
-# The `plot_trace_heatmap` function draws the data on a heatmap.  That function is not shown here; it is in `experiments.causal_trace`.
-# 
-
-# %%
 def plot_hidden_flow(
     mt,
     prompt,
@@ -304,15 +200,51 @@ def plot_hidden_flow(
 def plot_all_flow(mt, prompt, subject=None, noise=0.1, modelname=None,savepdf=None):
     for kind in [None, "mlp", "attn"]:
         plot_hidden_flow(
-            mt, prompt, subject, modelname=modelname, noise=noise, kind=kind,savepdf=savepdf+prompt.replace(" ", "_")+('state' if kind==None else kind)
+            mt, prompt, subject, modelname=modelname, noise=noise, kind=kind,savepdf=savepdf+prompt.replace(" ", "_").replace(":","").replace("?","").replace(".",'')+'corrupt-'+subject+('state' if kind==None else kind)
         )
 
-# %% [markdown]
-# The following prompt can be changed to any factual statement to trace.
 
-# %%
-print('plot_all_flow')
-plot_all_flow(mt, "2 + 3 =", '3',noise=noise_level, savepdf='/project/vsharan_1180/Tianyi/rome/my_exp_res/r1/')
-plot_all_flow(mt, "3 + 5 =", '3',noise=noise_level, savepdf='/project/vsharan_1180/Tianyi/rome/my_exp_res/r2/')
-plot_all_flow(mt, "one plus two equals to", 'one',noise=noise_level, savepdf='/project/vsharan_1180/Tianyi/rome/my_exp_res/r3/')
-plot_all_flow(mt, "two minus one is", 'one',noise=noise_level, savepdf='/project/vsharan_1180/Tianyi/rome/my_exp_res/r4/')
+model_name ='/project/vsharan_1180/Tianyi/rome/experiments/models/large/checkpoint-1031'#'finetune_gpt2_xl' #'gpt2-xl' #' #"gpt2-xl" #/project/vsharan_1180/Tianyi/rome/experiments/models/large/checkpoint-12432" #gpt2-xl"# 'EleutherAI_gpt-j-6B' #  # or "EleutherAI/gpt-j-6B" or "EleutherAI/gpt-neox-20b"
+folder_path = '/project/vsharan_1180/Tianyi/rome/experiments/models/newdata'
+folder_names = [os.path.join(folder_path, name) for name in os.listdir(folder_path) if os.path.isdir(os.path.join(folder_path, name))]
+print(folder_names)
+folder_names =['/project/vsharan_1180/Tianyi/rome/experiments/models/finetune_gpt2_xl']#['meta-llama/Llama-2-7b-hf']
+
+
+for model_name in folder_names:
+    model_name = model_name# ''
+    mt = ModelAndTokenizer(
+        model_name,
+        low_cpu_mem_usage=IS_COLAB,
+        torch_dtype=(torch.float16 if "20b" in model_name else None),
+    )
+    # if model_name=='meta-llama/Llama-2-7b-hf':
+    #     mt.num_layers = mt.num_hidden_layers 
+
+    print(predict_token(
+        mt,
+        ["3 12 + ", "3 12 + 1"],
+        return_p=True,
+    ))
+    print(predict_token(
+        mt,
+        ["What is 3 plus 12? Answer: ", "What is 3 plus 12? Answer: 1"],
+        return_p=True,
+    ))
+    # print('generate:',generate_sentence(
+    #     mt,
+    #     ["3 12 + ", "What is 3 plus 12? Answer: "],
+    # ))
+    # print('---')
+
+    knowns = KnownsDataset(DATA_DIR)  # Dataset of known facts
+    noise_level = 3 * collect_embedding_std(mt, [k["subject"] for k in knowns])
+    print(f"Using noise level {noise_level}")
+
+    print('plot_all_flow')
+    # plot_all_flow(mt, "3  12  +  ", '3',noise=noise_level, savepdf='/project/vsharan_1180/Tianyi/rome/math_exp/casual_tracing_exp/'+model_name.rsplit('-', 1)[-1]+'/' )
+    # plot_all_flow(mt, "What is 3 plus 12? Answer: ", '3',noise=noise_level, savepdf='/project/vsharan_1180/Tianyi/rome/math_exp/casual_tracing_exp/'+model_name.rsplit('-', 1)[-1]+'/' )
+    # plot_all_flow(mt, "3  12  +  ", '12',noise=noise_level, savepdf='/project/vsharan_1180/Tianyi/rome/llama/my_exp_res1/'+model_name.rsplit('-', 1)[-1]+'/' )
+    # plot_all_flow(mt, "3  12  +  ", '+',noise=noise_level, savepdf='/project/vsharan_1180/Tianyi/rome/llama/my_exp_res2/'+model_name.rsplit('-', 1)[-1]+'/' )
+    plot_all_flow(mt, "The Space Needle is in downtown", 'The Space Needle',noise=noise_level, savepdf='/project/vsharan_1180/Tianyi/rome/math_exp/casual_tracing_exp/'+model_name.rsplit('-', 1)[-1]+'/' )
+   

@@ -4,9 +4,13 @@ data
 *_tmp_*_.json
 *_kmeng01g1gn*
 experiments/models/
+experiments/logs/
 # Pre-trained hypernetworks
 baselines/*/weights
 
+experiments/data/
+experiments/logs/
+experiments/models/
 # Mac specific
 .idea
 .vscode
