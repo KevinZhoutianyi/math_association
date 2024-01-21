@@ -204,11 +204,11 @@ def plot_all_flow(mt, prompt, subject=None, noise=0.1, modelname=None,savepdf=No
         )
 
 
-model_name ='/project/vsharan_1180/Tianyi/rome/experiments/models/large/checkpoint-1031'#'finetune_gpt2_xl' #'gpt2-xl' #' #"gpt2-xl" #/project/vsharan_1180/Tianyi/rome/experiments/models/large/checkpoint-12432" #gpt2-xl"# 'EleutherAI_gpt-j-6B' #  # or "EleutherAI/gpt-j-6B" or "EleutherAI/gpt-neox-20b"
-folder_path = '/project/vsharan_1180/Tianyi/rome/experiments/models/newdata'
-folder_names = [os.path.join(folder_path, name) for name in os.listdir(folder_path) if os.path.isdir(os.path.join(folder_path, name))]
-print(folder_names)
-folder_names =['/project/vsharan_1180/Tianyi/rome/experiments/models/finetune_gpt2_xl']#['meta-llama/Llama-2-7b-hf']
+model_name =''#'finetune_gpt2_xl' #'gpt2-xl' #' #"gpt2-xl" #/project/vsharan_1180/Tianyi/rome/experiments/models/large/checkpoint-12432" #gpt2-xl"# 'EleutherAI_gpt-j-6B' #  # or "EleutherAI/gpt-j-6B" or "EleutherAI/gpt-neox-20b"
+# folder_path = '/project/vsharan_1180/Tianyi/rome/experiments/models/llama'
+# folder_names = [os.path.join(folder_path, name) for name in os.listdir(folder_path) if os.path.isdir(os.path.join(folder_path, name))]
+# print(folder_names)
+folder_names =['/project/vsharan_1180/Tianyi/rome/math_exp/models/newdata2/checkpoint-24736']#['meta-llama/Llama-2-7b-hf']
 
 
 for model_name in folder_names:

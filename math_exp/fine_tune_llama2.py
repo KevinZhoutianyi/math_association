@@ -6,11 +6,12 @@ import evaluate
 from transformers import DataCollatorForLanguageModeling
 from datasets import load_metric
 import os,re
-os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
-from decimal import Decimal, getcontext
+import torch
+# os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
+# from decimal import Decimal, getcontext
 
 # Set the precision (number of significant digits)
-getcontext().prec = 32
+# getcontext().prec = 32
 
 metric = evaluate.load('evaluate-metric/bleu')
 
@@ -18,15 +19,15 @@ def compute_metrics(eval_pred):
     logits, labels = eval_pred
     predictions = np.argmax(logits, axis=-1)
    
-    predictions = tokenizer.batch_decode(predictions,skip_special_tokens =True)
+    predictions = tokenizer.batch_decode(predictions,skip_special_tokens =True) #should be true, but will got div by 0
     labels = tokenizer.batch_decode(labels,skip_special_tokens =True)
     met = metric.compute(predictions=predictions, references=labels)
     met['precisions'] = sum(met['precisions']) / len(met['precisions'])
     return met
 
-tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-2-7b-hf")
-model = AutoModelForCausalLM.from_pretrained("meta-llama/Llama-2-7b-hf")
-tokenizer.pad_token = tokenizer.eos_token
+tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-2-7b-chat-hf")
+model = AutoModelForCausalLM.from_pretrained("meta-llama/Llama-2-7b-chat-hf",torch_dtype=torch.bfloat16) #llama2 only work on bf16, this cause acc boom
+tokenizer.pad_token = tokenizer.eos_token 
 model.resize_token_embeddings(len(tokenizer))
 data_collator = DataCollatorForLanguageModeling(tokenizer, mlm=False)
 datasize = 100000
@@ -105,9 +106,9 @@ print(data_collator([small_train_dataset[0],small_train_dataset[1]]))
 print(tokenizer.decode(small_train_dataset[0]['input_ids']))
 print(tokenizer.decode(small_train_dataset[0]['labels']))
 training_args = Seq2SeqTrainingArguments(
-    output_dir="./models/newdata",
+    output_dir="./models/newdata2",
     num_train_epochs=32,               # number of training epochs
-    per_device_train_batch_size=1,    # batch size per device during training
+    per_device_train_batch_size=8,    # batch size per device during training
     warmup_steps=10,                 # number of warmup steps
     weight_decay=0.01,                # strength of weight decay
     gradient_accumulation_steps=16,
